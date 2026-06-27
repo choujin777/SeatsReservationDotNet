@@ -7,20 +7,48 @@ using SeatsReservationDotNet.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Database — credentials via DB_USERNAME / DB_PASSWORD env vars (matching the Java app)
+// Database — prefer the configured connection string, but allow env vars to override it.
 var dbConfig = builder.Configuration.GetSection("Database");
-var csBuilder = new NpgsqlConnectionStringBuilder
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+
+if (string.IsNullOrWhiteSpace(connectionString))
 {
-    Host = dbConfig["Host"] ?? "localhost",
-    Port = int.Parse(dbConfig["Port"] ?? "5432"),
-    Database = dbConfig["Name"] ?? "seats_reservation",
-    Username = Environment.GetEnvironmentVariable("DB_USERNAME") ?? dbConfig["Username"],
-    Password = Environment.GetEnvironmentVariable("DB_PASSWORD") ?? dbConfig["Password"],
-    SearchPath = "base_schema"
-};
+    var csBuilder = new NpgsqlConnectionStringBuilder
+    {
+        Host = dbConfig["Host"] ?? "localhost",
+        Port = int.Parse(dbConfig["Port"] ?? "5432"),
+        Database = dbConfig["Name"] ?? "seats_reservation",
+        Username = Environment.GetEnvironmentVariable("DB_USERNAME") ?? dbConfig["Username"] ?? "postgres",
+        Password = Environment.GetEnvironmentVariable("DB_PASSWORD") ?? dbConfig["Password"],
+        SearchPath = "base_schema"
+    };
+
+    connectionString = csBuilder.ConnectionString;
+}
+else
+{
+    var csBuilder = new NpgsqlConnectionStringBuilder(connectionString)
+    {
+        SearchPath = "base_schema"
+    };
+
+    var username = Environment.GetEnvironmentVariable("DB_USERNAME");
+    if (!string.IsNullOrWhiteSpace(username))
+    {
+        csBuilder.Username = username;
+    }
+
+    var password = Environment.GetEnvironmentVariable("DB_PASSWORD");
+    if (!string.IsNullOrWhiteSpace(password))
+    {
+        csBuilder.Password = password;
+    }
+
+    connectionString = csBuilder.ConnectionString;
+}
 
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(csBuilder.ConnectionString));
+    options.UseNpgsql(connectionString));
 
 builder.Services.AddScoped<ISeatService, SeatService>();
 builder.Services.AddScoped<ISessionService, SessionService>();
